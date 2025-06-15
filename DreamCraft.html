@@ -1,0 +1,253 @@
+<script type="text/javascript">
+        var gk_isXlsx = false;
+        var gk_xlsxFileLookup = {};
+        var gk_fileData = {};
+        function filledCell(cell) {
+          return cell !== '' && cell != null;
+        }
+        function loadFileData(filename) {
+        if (gk_isXlsx && gk_xlsxFileLookup[filename]) {
+            try {
+                var workbook = XLSX.read(gk_fileData[filename], { type: 'base64' });
+                var firstSheetName = workbook.SheetNames[0];
+                var worksheet = workbook.Sheets[firstSheetName];
+
+                // Convert sheet to JSON to filter blank rows
+                var jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1, blankrows: false, defval: '' });
+                // Filter out blank rows (rows where all cells are empty, null, or undefined)
+                var filteredData = jsonData.filter(row => row.some(filledCell));
+
+                // Heuristic to find the header row by ignoring rows with fewer filled cells than the next row
+                var headerRowIndex = filteredData.findIndex((row, index) =>
+                  row.filter(filledCell).length >= filteredData[index + 1]?.filter(filledCell).length
+                );
+                // Fallback
+                if (headerRowIndex === -1 || headerRowIndex > 25) {
+                  headerRowIndex = 0;
+                }
+
+                // Convert filtered JSON back to CSV
+                var csv = XLSX.utils.aoa_to_sheet(filteredData.slice(headerRowIndex)); // Create a new sheet from filtered array of arrays
+                csv = XLSX.utils.sheet_to_csv(csv, { header: 1 });
+                return csv;
+            } catch (e) {
+                console.error(e);
+                return "";
+            }
+        }
+        return gk_fileData[filename] || "";
+        }
+        </script><!DOCTYPE html>
+<html>
+<head>
+  <title>DreamCraft by Thuhbest</title>
+  <meta name="description" content="DreamCraft by Thuhbest, a dream-themed game where you collect good dreams and avoid nightmares">
+  <meta name="keywords" content="DreamCraft, Thuhbest, game, dream game, AI game">
+  <meta name="author" content="Thuhbest">
+  <script src="https://cdn.jsdelivr.net/pyodide/v0.23.4/full/pyodide.js"></script>
+  <style>
+    body { font-family: Arial, sans-serif; text-align: center; background: #f0f0f0; margin: 0; }
+    h1 { color: #333; }
+    #dreamInput { width: 80%; max-width: 600px; padding: 10px; font-size: 16px; margin: 10px; }
+    #generateButton { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #4CAF50; color: white; border: none; }
+    #generateButton:hover { background: #45a049; }
+    #canvas { border: 1px solid #000; display: block; margin: 20px auto; }
+    #shareButton { padding: 10px 20px; font-size: 16px; cursor: pointer; background: #008CBA; color: white; border: none; display: none; }
+    #shareButton:hover { background: #007399; }
+    #error { color: red; margin: 10px; }
+    #scoreboard { font-size: 18px; margin: 10px; }
+    #gameOver { font-size: 24px; color: red; display: none; }
+    footer { margin: 20px; font-size: 14px; color: #555; }
+  </style>
+</head>
+<body>
+  <h1>DreamCraft by Thuhbest</h1>
+  <p>Enter your dream and play to collect good dreams while avoiding nightmares!</p>
+  <input type="text" id="dreamInput" placeholder="E.g., I was a bird flying over a forest">
+  <button id="generateButton" onclick="startGame()">Start Game</button>
+  <div id="error"></div>
+  <div id="scoreboard">Score: 0 | High Score: 0</div>
+  <canvas id="canvas" width="800" height="400"></canvas>
+  <div id="gameOver">Game Over! Final Score: 0</div>
+  <button id="shareButton" onclick="shareDream()">Share Your Score</button>
+  <footer>© 2025 Thuhbest. All rights reserved.</footer>
+
+  <script>
+    let pyodideReadyPromise = loadPyodide();
+    let canvas, ctx, player, score, highScore, dreams, gameRunning, spawnInterval;
+
+    // Initialize game state
+    function initGame(character, background) {
+      canvas = document.getElementById("canvas");
+      ctx = canvas.getContext("2d");
+      player = {
+        x: 100,
+        y: 200,
+        width: 30,
+        height: 30,
+        color: character === "bird" ? "#ff4500" : "#0000ff",
+        speed: 5
+      };
+      score = 0;
+      highScore = localStorage.getItem("highScore") || 0;
+      dreams = { good: [], bad: [], background: background };
+      gameRunning = true;
+      spawnInterval = 1000;
+      document.getElementById("gameOver").style.display = "none";
+      document.getElementById("shareButton").style.display = "none";
+      updateScoreboard();
+      spawnDreams();
+      document.addEventListener("keydown", handleKeys);
+      draw();
+    }
+
+    // Spawn good and bad dreams
+    function spawnDreams() {
+      if (!gameRunning) return;
+      dreams.good.push({
+        x: Math.random() * (canvas.width - 20),
+        y: Math.random() * (canvas.height - 20),
+        radius: 15,
+        timeLeft: 3000
+      });
+      if (Math.random() < 0.5) {
+        dreams.bad.push({
+          x: Math.random() * (canvas.width - 20),
+          y: Math.random() * (canvas.height - 20),
+          radius: 15,
+          timeLeft: 3000
+        });
+      }
+      if (score > 0 && score % 10 === 0 && spawnInterval > 300) {
+        spawnInterval = Math.max(300, spawnInterval - 100);
+      }
+      setTimeout(spawnDreams, spawnInterval);
+    }
+
+    // Update scoreboard
+    function updateScoreboard() {
+      document.getElementById("scoreboard").textContent = `Score: ${score} | High Score: ${highScore}`;
+    }
+
+    // Draw game
+    function draw() {
+      if (!gameRunning) return;
+      const bgColor = dreams.background === "forest" ? "#228b22" : "#808080";
+      ctx.fillStyle = bgColor;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw watermark
+      ctx.font = "20px Arial";
+      ctx.fillStyle = "rgba(255, 255, 255, 0.2)";
+      ctx.fillText("DreamCraft © Thuhbest", canvas.width / 2 - 100, canvas.height - 20);
+
+      // Draw player
+      ctx.fillStyle = player.color;
+      ctx.fillRect(player.x, player.y, player.width, player.height);
+
+      // Draw good dreams
+      dreams.good = dreams.good.filter(d => {
+        d.timeLeft -= 16;
+        if (d.timeLeft <= 0) return false;
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "#ffff00";
+        ctx.fill();
+        return true;
+      });
+
+      // Draw bad dreams
+      dreams.bad = dreams.bad.filter(d => {
+        d.timeLeft -= 16;
+        if (d.timeLeft <= 0) return false;
+        ctx.beginPath();
+        ctx.arc(d.x, d.y, d.radius, 0, Math.PI * 2);
+        ctx.fillStyle = "#333333";
+        ctx.fill();
+        return true;
+      });
+
+      // Check collisions
+      dreams.good = dreams.good.filter(d => {
+        if (collides(player, d)) {
+          score += 10;
+          if (score > highScore) {
+            highScore = score;
+            localStorage.setItem("highScore", highScore);
+          }
+          updateScoreboard();
+          return false;
+        }
+        return true;
+      });
+      dreams.bad.forEach(d => {
+        if (collides(player, d)) {
+          score -= 5;
+          updateScoreboard();
+          if (score < 0) endGame();
+        }
+      });
+
+      requestAnimationFrame(draw);
+    }
+
+    // Collision detection
+    function collides(player, dream) {
+      const dx = player.x + player.width / 2 - dream.x;
+      const dy = player.y + player.height / 2 - dream.y;
+      const distance = Math.sqrt(dx * dx + dy * dy);
+      return distance < dream.radius + player.width / 2;
+    }
+
+    // Handle key movements
+    function handleKeys(event) {
+      if (!gameRunning) return;
+      if (event.key === "ArrowRight") player.x = Math.min(player.x + player.speed, canvas.width - player.width);
+      if (event.key === "ArrowLeft") player.x = Math.max(player.x - player.speed, 0);
+      if (event.key === "ArrowUp") player.y = Math.max(player.y - player.speed, 0);
+      if (event.key === "ArrowDown") player.y = Math.min(player.y + player.speed, canvas.height - player.height);
+    }
+
+    // End game
+    function endGame() {
+      gameRunning = false;
+      document.getElementById("gameOver").textContent = `Game Over! Final Score: ${score}`;
+      document.getElementById("gameOver").style.display = "block";
+      document.getElementById("shareButton").style.display = "block";
+      document.removeEventListener("keydown", handleKeys);
+    }
+
+    // Share dream
+    function shareDream() {
+      const dreamText = document.getElementById("dreamInput").value;
+      const shareUrl = `${window.location.href}?dream=${encodeURIComponent(dreamText)}&score=${score}`;
+      alert(`Share this link to play DreamCraft by Thuhbest: ${shareUrl}`);
+    }
+
+    // Start game
+    async function startGame() {
+      try {
+        document.getElementById("error").textContent = "";
+        const dreamText = document.getElementById("dreamInput").value;
+        if (!dreamText) {
+          throw new Error("Please enter a dream description.");
+        }
+        let pyodide = await pyodideReadyPromise;
+        await pyodide.runPythonAsync(`
+import re
+def parse_dream(text):
+    text = text.lower()
+    character = "bird" if "bird" in text or "fly" in text else "person"
+    background = "forest" if "forest" in text or "tree" in text else "city"
+    return {"character": character, "background": background}
+result = parse_dream("${dreamText.replace(/"/g, '\\"')}")
+        `);
+        dreams = pyodide.globals.get("result").toJs();
+        initGame(dreams.character, dreams.background);
+      } catch (err) {
+        document.getElementById("error").textContent = `Error: ${err.message}`;
+      }
+    }
+  </script>
+</body>
+</html>
